@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  License: Apache-2.0
+  Author: Phan Huu Toan
+Description: "My Udacity Udagram final project for IaC lesson"
+Parameters:
+  StackName:
+    Description: Stack name using for output
+    Type: String
+  VPCCidr:
+    Description: VPC Cidr
+    Type: String
+  PublicSubnetCidr:
+    Description: Public subnet Cidr
+    Type: String
+  PrivateSubnetCidr:
+    Description: Private subnet Cidr
+    Type: String
+  PublicSubnetCidr2:
+    Description: Public subnet Cidr
+    Type: String
+  PrivateSubnetCidr2:
+    Description: Private subnet Cidr
+    Type: String
+Resources:
+  # VPC and IWG
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidr
+      EnableDnsSupport: true
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+  # Subnets
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs "us-east-1"]
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs "us-east-1"]
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetCidr
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs "us-east-1"]
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnetCidr2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs "us-east-1"]
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetCidr2
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  # NAT and EIP block
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  # Route tables and association
+  PublicRTB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRTB
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRTB
+  PublicRouteAssoc2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRTB
+
+  PrivateRTB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRTB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+  PrivateRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRTB
+  PrivateRouteAssoc2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRTB
+Outputs:
+  VPCId:
+    Description: Contain VPC Id
+    Value: !Ref MyVPC
+    Export:
+      Name: !Sub ${StackName}-VPC-ID
+  PrivateSubnetId:
+    Description: Private subnet Id
+    Value: !Ref PrivateSubnet
+    Export:
+      Name: !Sub ${StackName}-PrivateSubnetId
+  PrivateSubnetId2:
+    Description: Private subnet Id
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub ${StackName}-PrivateSubnetId2
+  PublicSubnetId:
+    Description: Public subnet Id
+    Value: !Ref PublicSubnet
+    Export:
+      Name: !Sub ${StackName}-PublicSubnetId
+  PublicSubnetId2:
+    Description: Public subnet Id 2
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub ${StackName}-PublicSubnetId2
+  PublicSubnetIdsList:
+    Description: Public subnet Id list
+    Value: !Join [",", [!Ref PublicSubnet, !Ref PublicSubnet2]]
+    Export:
+      Name: !Sub ${StackName}-PublicSubnetId-List
+  PrivateSubnetIdsList:
+    Description: Private subnet Id list
+    Value: !Join [",", [!Ref PrivateSubnet, !Ref PrivateSubnet2]]
+    Export:
+      Name: !Sub ${StackName}-PrivateSubnetId-List
