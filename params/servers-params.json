@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "StackName",
+    "ParameterValue": "IaC-Final"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t2.medium"
+  },
+  {
+    "ParameterKey": "BucketName",
+    "ParameterValue": "iac-bucket-0512"
+  }
+]

@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  License: Apache-2.0
+  Author: Phan Huu Toan
+Description: "My Udacity Udagram final project for IaC lesson"
+Parameters:
+  StackName:
+    Description: stack name
+    Type: String
+  InstanceType:
+    Description: instance type such as t2.micro t2.nano...
+    Type: String
+  BucketName:
+    Description: Your resource bucket name
+    Type: String
+
+Resources:
+  # I. Security groups
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Application load balancer Security Group
+      VpcId:
+        Fn::ImportValue: !Sub ${StackName}-VPC-ID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Security Group
+      VpcId:
+        Fn::ImportValue: !Sub ${StackName}-VPC-ID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+  # S3 instance profile
+  S3AllowOnly:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "S3AllowOnly"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:aws:s3:::${BucketName}
+              - Effect: "Allow"
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:aws:s3:::${BucketName}/*
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref S3AllowOnly
+  # II. Autoscaling group & EC2
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${StackName}-launch-template
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        ImageId: ami-0263e4deb427da90e # Ubuntu 18 LTS image
+        InstanceType: !Ref InstanceType
+        KeyName: SSH-Key
+        BlockDeviceMappings:
+          - DeviceName: "/dev/xvda"
+            Ebs:
+              VolumeSize: 15
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo apt update -y
+            sudo apt install apache2 -y
+            sudo systemctl start apache2
+            sudo systemctl enable apache2
+            sudo apt install awscli -y
+            aws configure set default.region us-east-1
+            sudo aws s3api get-object --bucket ${BucketName} --key index.html /var/www/html/index.html
+  EC2ServerGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: "iac-auto-group"
+      HealthCheckGracePeriod: 10
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EC2LaunchTemplate
+        Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      MaxSize: 6
+      MinSize: 4
+      Tags:
+        - Key: StackName
+          Value: !Ref StackName
+          PropagateAtLaunch: True
+      VPCZoneIdentifier:
+        Fn::Split:
+          - ","
+          - Fn::ImportValue: !Sub ${StackName}-PrivateSubnetId-List
+      TargetGroupARNs:
+        - !GetAtt EC2TargetsGroup.TargetGroupArn
+
+  # III. load balancer
+  EC2TargetsGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 25
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: "200"
+      Name: "iac-target"
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "20"
+      UnhealthyThresholdCount: 3
+      VpcId:
+        Fn::ImportValue: !Sub ${StackName}-VPC-ID
+  EC2GroupLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        Fn::Split:
+          - ","
+          - Fn::ImportValue: !Sub ${StackName}-PublicSubnetId-List
+      SecurityGroups:
+        - !GetAtt LoadBalancerSecurityGroup.GroupId
+  LBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetsGroup
+      LoadBalancerArn: !Ref EC2GroupLoadBalancer
+      Port: 80
+      Protocol: HTTP
+Outputs:
+  LoadBalancerEndpoint:
+    Description: Load balancer endpoint
+    Value: !GetAtt EC2GroupLoadBalancer.DNSName
+    Export:
+      Name: !Sub ${StackName}-LB-DNS

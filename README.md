@@ -11,6 +11,16 @@ Images:
 
 ### How to run
 
+- Create a S3 bucket (using console or aws cli), and upload a dummy index.html file (located at sample folder) to it.
 - Run: `chmod 400 ./updateStack.sh ./createStack.sh`
+- Build network first: `./createStack.sh <Stack-name> ./configs/network.yml ./params/network-params.json`, the name is up to you.
+- Then build server: `./createStack.sh <Stack-name> ./configs/servers.yml ./params/servers-params.json`, the name is up to you.
 
-- To build network: `./updateStack.sh <Stack-name> ./configs/network.yml ./params/network-params.json`, the name is up to you.
+### Result:
+
+1. All resources can be seen in images folder.
+2. Final result:
+   a. Load balancer endpoint
+   ![Endpoint](./images/lb-endpoint.png)
+   b. Final result
+   ![Result](./images/final_result.png)
